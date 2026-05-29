@@ -5,15 +5,17 @@ import { usePathname } from "next/navigation";
 import { Icon } from "./Icon";
 import { TopBar } from "./TopBar";
 import { Sidebar } from "./Sidebar";
+import type { AdminNotification } from "./data";
 
 type Props = {
-  user: { name: string; email: string };
+  user: { name: string; email: string; roles: string[] };
+  notifications: AdminNotification[];
   children: ReactNode;
 };
 
 const MOBILE_BREAKPOINT = 900;
 
-export function AdminShell({ user, children }: Props) {
+export function AdminShell({ user, notifications, children }: Props) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
@@ -50,7 +52,11 @@ export function AdminShell({ user, children }: Props) {
 
   return (
     <div className="shell">
-      <TopBar user={user} onMenuClick={onMenuClick} />
+      <TopBar
+        user={user}
+        notifications={notifications}
+        onMenuClick={onMenuClick}
+      />
       <div className="shell__body">
         {isMobile && mobileOpen && (
           <div

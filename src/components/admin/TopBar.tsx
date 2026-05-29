@@ -9,29 +9,26 @@ import {
   type ChangeEvent,
 } from "react";
 import { Icon, type IconName } from "./Icon";
+import { ThemeToggle } from "./ThemeToggle";
+import type { AdminNotification } from "./data";
+import { initialsFor } from "@/lib/ui/avatar";
 
 type Props = {
   onMenuClick: () => void;
-  user: { name: string; email: string };
+  user: { name: string; email: string; roles: string[] };
+  notifications: AdminNotification[];
 };
 
-type Notification = { t: string; s: string; k: IconName };
+type SearchItem = {
+  id: string;
+  title: string;
+  sub: string;
+  href: string;
+  icon: string;
+};
+type SearchGroup = { key: string; label: string; items: SearchItem[] };
 
-const NOTIFICATIONS: Notification[] = [
-  { t: "Nuevo usuario solicita acceso", s: "j.salas@unamad.edu.pe · hace 12 min", k: "user" },
-  { t: "Grupo «Profesores de Classroom» actualizado", s: "222 miembros · hace 1 h", k: "users" },
-  { t: "Política de seguridad aplicada", s: "12 dispositivos afectados · hace 3 h", k: "shield" },
-  { t: "Almacenamiento al 78%", s: "Considera aumentar la cuota · ayer", k: "cloud" },
-];
-
-function initialsFor(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "?";
-  if (parts.length === 1) return parts[0].charAt(0).toUpperCase();
-  return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
-}
-
-export function TopBar({ onMenuClick, user }: Props) {
+export function TopBar({ onMenuClick, user, notifications }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
@@ -40,9 +37,12 @@ export function TopBar({ onMenuClick, user }: Props) {
   const initialQuery = params.get("q") ?? "";
   const [search, setSearch] = useState(initialQuery);
   const [focused, setFocused] = useState(false);
+  const [results, setResults] = useState<SearchGroup[]>([]);
+  const [searching, setSearching] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [avatarOpen, setAvatarOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const searchRef = useRef<HTMLDivElement>(null);
   const notifRef = useRef<HTMLDivElement>(null);
   const avatarRef = useRef<HTMLDivElement>(null);
 
@@ -51,11 +51,46 @@ export function TopBar({ onMenuClick, user }: Props) {
     setSearch(params.get("q") ?? "");
   }, [params]);
 
+  // Debounced global search across modules the user can read. All state
+  // updates happen inside the timeout callback (never synchronously in the
+  // effect body) to avoid cascading renders.
+  useEffect(() => {
+    const q = search.trim();
+    const ctrl = new AbortController();
+    const t = setTimeout(async () => {
+      if (q.length < 2) {
+        setResults([]);
+        setSearching(false);
+        return;
+      }
+      setSearching(true);
+      try {
+        const res = await fetch(`/api/admin/search?q=${encodeURIComponent(q)}`, {
+          signal: ctrl.signal,
+        });
+        const data = (await res.json()) as { groups?: SearchGroup[] };
+        setResults(data.groups ?? []);
+      } catch {
+        /* aborted or failed */
+      } finally {
+        setSearching(false);
+      }
+    }, 220);
+    return () => {
+      clearTimeout(t);
+      ctrl.abort();
+    };
+  }, [search]);
+
   useEffect(() => {
     const onClick = (e: MouseEvent) => {
       const target = e.target as Node;
-      if (notifRef.current && !notifRef.current.contains(target)) setNotifOpen(false);
-      if (avatarRef.current && !avatarRef.current.contains(target)) setAvatarOpen(false);
+      if (searchRef.current && !searchRef.current.contains(target))
+        setFocused(false);
+      if (notifRef.current && !notifRef.current.contains(target))
+        setNotifOpen(false);
+      if (avatarRef.current && !avatarRef.current.contains(target))
+        setAvatarOpen(false);
     };
     document.addEventListener("mousedown", onClick);
     return () => document.removeEventListener("mousedown", onClick);
@@ -76,6 +111,11 @@ export function TopBar({ onMenuClick, user }: Props) {
     updateQuery(e.target.value);
   };
 
+  const goTo = (href: string) => {
+    setFocused(false);
+    router.push(href);
+  };
+
   const onLogout = async () => {
     if (loggingOut) return;
     setLoggingOut(true);
@@ -87,6 +127,9 @@ export function TopBar({ onMenuClick, user }: Props) {
     router.replace("/login");
     router.refresh();
   };
+
+  const showResults =
+    focused && search.trim().length >= 2 && (results.length > 0 || !searching);
 
   return (
     <header className="topbar">
@@ -100,28 +143,62 @@ export function TopBar({ onMenuClick, user }: Props) {
         </div>
       </div>
 
-      <div className={`topbar__search ${focused ? "is-focused" : ""}`}>
-        <Icon name="search" size={20} className="topbar__search-icon" />
-        <input
-          type="text"
-          placeholder="Buscar usuarios, grupos, ajustes o dispositivos"
-          value={search}
-          onChange={onSearchChange}
-          onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
-        />
-        {search && (
-          <button
-            className="topbar__search-clear"
-            onClick={() => updateQuery("")}
-            aria-label="Borrar búsqueda"
-          >
-            <Icon name="close" size={16} />
-          </button>
+      <div className="topbar__search-wrap" ref={searchRef}>
+        <div className={`topbar__search ${focused ? "is-focused" : ""}`}>
+          <Icon name="search" size={20} className="topbar__search-icon" />
+          <input
+            type="text"
+            placeholder="Buscar usuarios, roles o incidentes"
+            value={search}
+            onChange={onSearchChange}
+            onFocus={() => setFocused(true)}
+          />
+          {search && (
+            <button
+              className="topbar__search-clear"
+              onClick={() => updateQuery("")}
+              aria-label="Borrar búsqueda"
+            >
+              <Icon name="close" size={16} />
+            </button>
+          )}
+        </div>
+
+        {showResults && (
+          <div className="popover popover--search">
+            {results.length === 0 ? (
+              <div className="search-empty">
+                {searching ? "Buscando…" : "Sin resultados"}
+              </div>
+            ) : (
+              results.map((g) => (
+                <div key={g.key} className="search-group">
+                  <div className="search-group__label">{g.label}</div>
+                  {g.items.map((it) => (
+                    <button
+                      key={it.id}
+                      className="search-item"
+                      onClick={() => goTo(it.href)}
+                    >
+                      <span className="search-item__icon">
+                        <Icon name={it.icon as IconName} size={18} />
+                      </span>
+                      <span className="search-item__text">
+                        <span className="search-item__title">{it.title}</span>
+                        <span className="search-item__sub">{it.sub}</span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ))
+            )}
+          </div>
         )}
       </div>
 
       <div className="topbar__right">
+        <ThemeToggle />
+
         <div className="topbar__action-wrap" ref={notifRef}>
           <button
             className="iconbtn"
@@ -129,27 +206,39 @@ export function TopBar({ onMenuClick, user }: Props) {
             aria-label="Notificaciones"
           >
             <Icon name="bell" size={20} />
-            <span className="iconbtn__badge">3</span>
+            {notifications.length > 0 && (
+              <span className="iconbtn__badge">{notifications.length}</span>
+            )}
           </button>
           {notifOpen && (
             <div className="popover popover--notif">
               <div className="popover__head">
                 <b>Notificaciones</b>
-                <button className="linkbtn">Marcar todo como leído</button>
               </div>
-              <ul className="notif-list">
-                {NOTIFICATIONS.map((n, i) => (
-                  <li key={i} className="notif-item">
-                    <span className="notif-item__icon">
-                      <Icon name={n.k} size={18} />
-                    </span>
-                    <div>
-                      <div className="notif-item__t">{n.t}</div>
-                      <div className="notif-item__s">{n.s}</div>
-                    </div>
-                  </li>
-                ))}
-              </ul>
+              {notifications.length === 0 ? (
+                <div className="search-empty">Todo al día. Sin novedades.</div>
+              ) : (
+                <ul className="notif-list">
+                  {notifications.map((n) => (
+                    <li
+                      key={n.id}
+                      className="notif-item"
+                      onClick={() => {
+                        setNotifOpen(false);
+                        router.push(n.href);
+                      }}
+                    >
+                      <span className="notif-item__icon">
+                        <Icon name={n.icon} size={18} />
+                      </span>
+                      <div>
+                        <div className="notif-item__t">{n.title}</div>
+                        <div className="notif-item__s">{n.sub}</div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           )}
         </div>
@@ -172,16 +261,18 @@ export function TopBar({ onMenuClick, user }: Props) {
                     <div className="account__email">{user.email}</div>
                   </div>
                 </div>
-                <button className="btn btn--ghost btn--full">
-                  Gestionar tu cuenta
-                </button>
+                {user.roles.length > 0 && (
+                  <div className="account__roles">
+                    {user.roles.map((r) => (
+                      <span key={r} className="chip chip--static">
+                        {r}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
               <div className="account__divider" />
               <div className="account__actions">
-                <button className="account__action">
-                  <Icon name="user" size={18} />
-                  <span>Añadir otra cuenta</span>
-                </button>
                 <button
                   className="account__action"
                   onClick={onLogout}

@@ -25,6 +25,27 @@
   --sidebar-w: 256px;
   --sidebar-w-collapsed: 72px;
   --row-h: 52px;
+  color-scheme: light;
+
+  /* Incident status (bg / fg) */
+  --st-open-bg: #e8f0fe;
+  --st-open-fg: #1a73e8;
+  --st-triaged-bg: #fef3c7;
+  --st-triaged-fg: #92400e;
+  --st-progress-bg: #e0e7ff;
+  --st-progress-fg: #3730a3;
+  --st-resolved-bg: #d1fae5;
+  --st-resolved-fg: #065f46;
+  --st-rejected-bg: #fee2e2;
+  --st-rejected-fg: #991b1b;
+  --st-closed-bg: #f1f3f4;
+  --st-closed-fg: #5f6368;
+
+  /* Incident severity (solid dot / track) */
+  --sev-low: #34a853;
+  --sev-medium: #1a73e8;
+  --sev-high: #f59e0b;
+  --sev-critical: #d93025;
 }
 
 html[data-theme="dark"] {
@@ -40,6 +61,25 @@ html[data-theme="dark"] {
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.4);
   --shadow-lg: 0 12px 28px rgba(0, 0, 0, 0.5);
+  color-scheme: dark;
+
+  --st-open-bg: rgba(26, 115, 232, 0.2);
+  --st-open-fg: #8ab4f8;
+  --st-triaged-bg: rgba(245, 158, 11, 0.18);
+  --st-triaged-fg: #fcd34d;
+  --st-progress-bg: rgba(99, 102, 241, 0.22);
+  --st-progress-fg: #a5b4fc;
+  --st-resolved-bg: rgba(16, 185, 129, 0.18);
+  --st-resolved-fg: #6ee7b7;
+  --st-rejected-bg: rgba(239, 68, 68, 0.18);
+  --st-rejected-fg: #fca5a5;
+  --st-closed-bg: rgba(154, 160, 166, 0.16);
+  --st-closed-fg: #c4c7c5;
+
+  --sev-low: #5bb974;
+  --sev-medium: #8ab4f8;
+  --sev-high: #fbbc04;
+  --sev-critical: #f28b82;
 }
 
 * {
@@ -307,6 +347,152 @@ html[data-theme="dark"] .iconbtn:hover {
   right: auto;
   min-width: 260px;
   padding: 8px 0;
+}
+.popover--theme {
+  width: 220px;
+  padding-bottom: 8px;
+}
+.theme-menu {
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  gap: 2px;
+}
+.theme-opt {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 9px 12px;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius);
+  cursor: pointer;
+  color: var(--text);
+  font-size: 13.5px;
+  text-align: left;
+}
+.theme-opt span {
+  flex: 1;
+}
+.theme-opt:hover {
+  background: var(--bg-soft);
+}
+.theme-opt.is-active {
+  color: var(--accent);
+}
+.theme-opt__check {
+  color: var(--accent);
+}
+
+/* Dark-mode hover fixes for elements that hard-coded a black tint */
+html[data-theme="dark"] .topbar__search-clear:hover,
+html[data-theme="dark"] .banner__close:hover,
+html[data-theme="dark"] .chip button:hover {
+  background: rgba(232, 234, 237, 0.1);
+}
+
+/* ─────────── Global search ─────────── */
+.topbar__search-wrap {
+  flex: 1;
+  min-width: 0;
+  max-width: 720px;
+  margin: 0 auto;
+  position: relative;
+}
+.topbar__search-wrap .topbar__search {
+  max-width: none;
+  margin: 0;
+  width: 100%;
+}
+.popover--search {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  min-width: 0;
+  max-height: 70vh;
+  overflow-y: auto;
+  padding: 6px 0;
+}
+.search-empty {
+  padding: 18px 16px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.search-group {
+  padding: 4px 0;
+}
+.search-group + .search-group {
+  border-top: 1px solid var(--border);
+}
+.search-group__label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  font-weight: 600;
+  padding: 8px 16px 4px;
+}
+.search-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  padding: 8px 16px;
+  text-align: left;
+  color: var(--text);
+}
+.search-item:hover {
+  background: var(--bg-soft);
+}
+.search-item__icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--bg-sunken);
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.search-item__text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.search-item__title {
+  font-size: 13.5px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.search-item__sub {
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Account roles chips */
+.account__roles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+.chip--static {
+  height: 26px;
+  padding: 0 12px;
+  font-size: 12px;
 }
 
 .linkbtn {
