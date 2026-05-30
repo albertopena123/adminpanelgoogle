@@ -63,6 +63,32 @@ function isP2002(e: unknown): boolean {
   );
 }
 
+// Serializable transaction with retry on write-conflict (P2034). Required so
+// the "≥1 active superadmin" check can't be defeated by concurrent removals
+// (write skew under the default Read Committed isolation).
+async function runSuperadminTx<T>(
+  fn: (tx: Prisma.TransactionClient) => Promise<T>,
+): Promise<T> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      return await prisma.$transaction(fn, {
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      });
+    } catch (e) {
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === "P2034"
+      ) {
+        lastErr = e;
+        continue;
+      }
+      throw e;
+    }
+  }
+  throw lastErr;
+}
+
 function refresh() {
   revalidatePath("/roles");
   revalidatePath("/usuarios");
@@ -292,7 +318,7 @@ export async function removeUserFromRole(
       return fail("No puedes quitarte el rol de superadministrador.");
     }
 
-    await prisma.$transaction(async (tx) => {
+    await runSuperadminTx(async (tx) => {
       await tx.userRole.deleteMany({ where: { roleId, userId } });
       // If we just removed a super, make sure at least one remains active.
       if (role.key === "superadmin") {

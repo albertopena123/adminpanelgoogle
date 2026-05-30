@@ -64,7 +64,11 @@ export async function changeOwnPassword(input: {
     const revoked = await prisma.$transaction(async (tx) => {
       await tx.user.update({ where: { id: me.id }, data: { passwordHash } });
       const purged = await tx.session.deleteMany({
-        where: { userId: me.id, NOT: { id: me.sessionId } },
+        where: {
+          userId: me.id,
+          NOT: { id: me.sessionId },
+          expiresAt: { gt: new Date() },
+        },
       });
       return purged.count;
     });
@@ -103,7 +107,11 @@ export async function revokeOtherSessions(): Promise<ActionResult<{ count: numbe
     if (!me) return fail("No autenticado.");
 
     const result = await prisma.session.deleteMany({
-      where: { userId: me.id, NOT: { id: me.sessionId } },
+      where: {
+        userId: me.id,
+        NOT: { id: me.sessionId },
+        expiresAt: { gt: new Date() },
+      },
     });
     revalidatePath("/cuenta");
     return ok({ count: result.count });

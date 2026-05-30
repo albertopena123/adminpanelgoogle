@@ -85,6 +85,40 @@ function isP2002(e: unknown): boolean {
   );
 }
 
+// P2034: write conflict / deadlock under a serializable transaction.
+function isSerializationFailure(e: unknown): boolean {
+  return (
+    e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2034"
+  );
+}
+
+/**
+ * Run a transaction at Serializable isolation, retrying on write-conflict.
+ * Serializable is required for the "≥1 active superadmin" invariant: under the
+ * default Read Committed, two concurrent removals each count the other's
+ * still-active super and both pass, leaving zero (write skew). Serializable
+ * makes Postgres abort one of the conflicting pair instead.
+ */
+async function serializableTx<T>(
+  fn: (tx: Prisma.TransactionClient) => Promise<T>,
+): Promise<T> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      return await prisma.$transaction(fn, {
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      });
+    } catch (e) {
+      if (isSerializationFailure(e)) {
+        lastErr = e;
+        continue;
+      }
+      throw e;
+    }
+  }
+  throw lastErr;
+}
+
 /* ────────────────────────────────── createUser ────────────────────────────────── */
 
 type CreateInput = {
@@ -218,7 +252,7 @@ export async function setUserActive(
       );
     }
 
-    await prisma.$transaction(async (tx) => {
+    await serializableTx(async (tx) => {
       await tx.user.update({ where: { id: userId }, data: { active } });
       if (!active) await ensureSuperadminRemains(tx);
     });
@@ -283,7 +317,7 @@ export async function setUserRoles(
       }
     }
 
-    await prisma.$transaction(async (tx) => {
+    await serializableTx(async (tx) => {
       await tx.userRole.deleteMany({ where: { userId } });
       if (cleanIds.length > 0) {
         await tx.userRole.createMany({
@@ -409,7 +443,7 @@ export async function deleteUser(userId: string): Promise<ActionResult> {
       );
     }
 
-    await prisma.$transaction(async (tx) => {
+    await serializableTx(async (tx) => {
       await tx.user.delete({ where: { id: userId } });
       await ensureSuperadminRemains(tx);
     });
@@ -460,7 +494,7 @@ export async function bulkSetActive(
     }
 
     let count = 0;
-    await prisma.$transaction(async (tx) => {
+    await serializableTx(async (tx) => {
       const result = await tx.user.updateMany({
         where: { id: { in: finalTargets } },
         data: { active },
@@ -514,7 +548,7 @@ export async function bulkDelete(
     }
 
     let count = 0;
-    await prisma.$transaction(async (tx) => {
+    await serializableTx(async (tx) => {
       const result = await tx.user.deleteMany({
         where: { id: { in: finalTargets } },
       });

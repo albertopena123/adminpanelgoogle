@@ -215,6 +215,15 @@ export function IncidentDrawer({ code, assignees, perms, onClose }: Props) {
                       disabled={busy}
                     >
                       <option value="">Sin asignar</option>
+                      {/* Keep the current assignee selectable even if suspended
+                          (not in the active-users list), so it isn't shown as
+                          "Sin asignar" or accidentally unassigned on save. */}
+                      {detail.assignee &&
+                        !assignees.some((a) => a.id === detail.assignee!.id) && (
+                          <option value={detail.assignee.id}>
+                            {detail.assignee.name} (suspendido)
+                          </option>
+                        )}
                       {assignees.map((a) => (
                         <option key={a.id} value={a.id}>
                           {a.name}

@@ -43,7 +43,12 @@ export async function POST(request: Request) {
     typeof input.locationText === "string"
       ? input.locationText.trim().slice(0, 200)
       : null;
-  const attachmentUrls = Array.isArray(input.attachmentUrls)
+  const MAX_ATTACHMENTS = 10;
+  const URL_MAX = 2048;
+  const MIME_MAX = 128;
+  const MIME_RE = /^[\w.+-]+\/[\w.+-]+$/;
+
+  const rawAttachments = Array.isArray(input.attachmentUrls)
     ? (input.attachmentUrls as unknown[]).filter(
         (u): u is { url: string; mimeType: string; sizeBytes?: number } =>
           typeof u === "object" &&
@@ -52,6 +57,35 @@ export async function POST(request: Request) {
           typeof (u as { mimeType?: unknown }).mimeType === "string",
       )
     : [];
+
+  // Validate attachments: bound count/length, require http(s) URLs and a
+  // well-formed mimeType. Reject rather than silently dropping bad entries.
+  let attachmentError: string | null = null;
+  if (rawAttachments.length > MAX_ATTACHMENTS) {
+    attachmentError = `Máximo ${MAX_ATTACHMENTS} adjuntos.`;
+  }
+  const attachmentUrls = rawAttachments.filter((a) => {
+    if (a.url.length > URL_MAX || a.mimeType.length > MIME_MAX) {
+      attachmentError ??= "Adjunto demasiado largo.";
+      return false;
+    }
+    let parsed: URL;
+    try {
+      parsed = new URL(a.url);
+    } catch {
+      attachmentError ??= "URL de adjunto no válida.";
+      return false;
+    }
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      attachmentError ??= "El adjunto debe ser una URL http(s).";
+      return false;
+    }
+    if (!MIME_RE.test(a.mimeType)) {
+      attachmentError ??= "Tipo de adjunto no válido.";
+      return false;
+    }
+    return true;
+  });
 
   const fieldErrors: Record<string, string> = {};
   if (title.length < TITLE_MIN)
@@ -70,6 +104,7 @@ export async function POST(request: Request) {
     fieldErrors.lat = "Latitud fuera de rango.";
   if (lng !== null && (lng < -180 || lng > 180))
     fieldErrors.lng = "Longitud fuera de rango.";
+  if (attachmentError) fieldErrors.attachmentUrls = attachmentError;
 
   if (Object.keys(fieldErrors).length > 0) {
     return fail("Revisa los campos marcados.", 400, fieldErrors);

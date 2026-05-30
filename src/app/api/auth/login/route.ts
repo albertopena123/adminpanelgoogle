@@ -20,24 +20,36 @@ function getDummyHash(): Promise<string> {
   return dummyHashPromise;
 }
 
-// ────────── C3: simple in-memory sliding-window rate limit ──────────
-// 10 attempts per minute per IP for the login endpoint.
+// ────────── C3: in-memory sliding-window rate limits ──────────
+type Bucket = { count: number; resetAt: number };
+
+// Per-IP limiter: best-effort first line of defense. NOTE: the IP comes from
+// X-Forwarded-For, which a client can spoof unless a trusted proxy overwrites
+// it. Apache should be configured to set XFF from the real peer; even so, the
+// per-ACCOUNT limiter below is the authoritative brute-force defense because it
+// cannot be bypassed by rotating the forwarded IP.
 const RATE_MAX = 10;
 const RATE_WINDOW_MS = 60_000;
-type Bucket = { count: number; resetAt: number };
-const buckets = new Map<string, Bucket>();
+const ipBuckets = new Map<string, Bucket>();
+
+// Per-account limiter: caps FAILED attempts per email so spoofing the IP can't
+// grant unlimited guesses against a specific account.
+const EMAIL_MAX = 5;
+const EMAIL_WINDOW_MS = 15 * 60_000;
+const emailBuckets = new Map<string, Bucket>();
+
+function gc(map: Map<string, Bucket>, now: number) {
+  if (map.size > 5000) {
+    for (const [k, v] of map) if (v.resetAt < now) map.delete(k);
+  }
+}
 
 function rateCheck(ip: string): { allowed: boolean; retryAfter: number } {
   const now = Date.now();
-
-  // Light GC so the map doesn't grow unbounded under sustained load.
-  if (buckets.size > 5000) {
-    for (const [k, v] of buckets) if (v.resetAt < now) buckets.delete(k);
-  }
-
-  const b = buckets.get(ip);
+  gc(ipBuckets, now);
+  const b = ipBuckets.get(ip);
   if (!b || b.resetAt < now) {
-    buckets.set(ip, { count: 1, resetAt: now + RATE_WINDOW_MS });
+    ipBuckets.set(ip, { count: 1, resetAt: now + RATE_WINDOW_MS });
     return { allowed: true, retryAfter: 0 };
   }
   if (b.count >= RATE_MAX) {
@@ -45,6 +57,31 @@ function rateCheck(ip: string): { allowed: boolean; retryAfter: number } {
   }
   b.count++;
   return { allowed: true, retryAfter: 0 };
+}
+
+function emailBlocked(email: string): { blocked: boolean; retryAfter: number } {
+  const now = Date.now();
+  const b = emailBuckets.get(email);
+  if (!b || b.resetAt < now) return { blocked: false, retryAfter: 0 };
+  if (b.count >= EMAIL_MAX) {
+    return { blocked: true, retryAfter: Math.ceil((b.resetAt - now) / 1000) };
+  }
+  return { blocked: false, retryAfter: 0 };
+}
+
+function recordEmailFailure(email: string): void {
+  const now = Date.now();
+  gc(emailBuckets, now);
+  const b = emailBuckets.get(email);
+  if (!b || b.resetAt < now) {
+    emailBuckets.set(email, { count: 1, resetAt: now + EMAIL_WINDOW_MS });
+  } else {
+    b.count++;
+  }
+}
+
+function clearEmailFailures(email: string): void {
+  emailBuckets.delete(email);
 }
 
 async function getClientIp(): Promise<string> {
@@ -90,6 +127,20 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: GENERIC_ERROR }, { status: 400 });
   }
 
+  // Per-account throttle: cannot be bypassed by rotating the forwarded IP.
+  const accountBlock = emailBlocked(normalizedEmail);
+  if (accountBlock.blocked) {
+    return NextResponse.json(
+      {
+        error: `Demasiados intentos para esta cuenta. Vuelve a intentarlo en ${accountBlock.retryAfter}s.`,
+      },
+      {
+        status: 429,
+        headers: { "Retry-After": String(accountBlock.retryAfter) },
+      },
+    );
+  }
+
   const user = await prisma.user.findUnique({
     where: { email: normalizedEmail },
   });
@@ -98,13 +149,18 @@ export async function POST(request: Request) {
   // doesn't exist. Discard the result; return the same generic 401.
   if (!user || !user.active) {
     await verifyPassword(password, await getDummyHash());
+    recordEmailFailure(normalizedEmail);
     return NextResponse.json({ error: GENERIC_ERROR }, { status: 401 });
   }
 
   const ok = await verifyPassword(password, user.passwordHash);
   if (!ok) {
+    recordEmailFailure(normalizedEmail);
     return NextResponse.json({ error: GENERIC_ERROR }, { status: 401 });
   }
+
+  // Successful auth clears the account's failure counter.
+  clearEmailFailures(normalizedEmail);
 
   const meta = await clientMeta();
   const h = await headers();
