@@ -126,9 +126,13 @@ export function IncidentDrawer({ code, assignees, perms, onClose }: Props) {
   };
 
   return (
-    <>
-      <div className="drawer-backdrop" onClick={busy ? undefined : onClose} />
-      <div className="drawer drawer--wide" role="dialog" aria-modal="true">
+    <div className="drawer-backdrop" onClick={busy ? undefined : onClose}>
+      <div
+        className="drawer drawer--wide"
+        role="dialog"
+        aria-modal="true"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="drawer__head">
           <div>
             <div className="drawer__eyebrow">{code}</div>
@@ -402,6 +406,6 @@ export function IncidentDrawer({ code, assignees, perms, onClose }: Props) {
           </>
         )}
       </div>
-    </>
+    </div>
   );
 }
