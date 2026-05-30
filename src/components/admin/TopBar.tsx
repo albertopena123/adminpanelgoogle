@@ -275,6 +275,16 @@ export function TopBar({ onMenuClick, user, notifications }: Props) {
               <div className="account__actions">
                 <button
                   className="account__action"
+                  onClick={() => {
+                    setAvatarOpen(false);
+                    router.push("/cuenta");
+                  }}
+                >
+                  <Icon name="user" size={18} />
+                  <span>Mi cuenta</span>
+                </button>
+                <button
+                  className="account__action"
                   onClick={onLogout}
                   disabled={loggingOut}
                 >
