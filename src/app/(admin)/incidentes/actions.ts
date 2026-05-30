@@ -81,7 +81,9 @@ export async function getIncidentDetail(
     });
     if (!incident) return fail("Incidente no encontrado.");
 
-    const canInternal = me.permissions.has("incidents.read");
+    // Internal comments are admin-only. Gate on write (incidents.read is the
+    // entry precondition, so it would always be true and leak to viewers).
+    const canInternal = me.permissions.has("incidents.write");
     const timeline: TimelineItem[] = [
       ...incident.comments
         .filter((c) => canInternal || !c.internal)
@@ -163,7 +165,8 @@ export async function changeStatus(
         where: { id },
         data: {
           status: toStatus as $Enums.IncidentStatus,
-          resolvedAt: toStatus === "resolved" ? new Date() : undefined,
+          // null (not undefined) so reopening clears a stale resolution time.
+          resolvedAt: toStatus === "resolved" ? new Date() : null,
         },
       });
       await tx.incidentStatusLog.create({
